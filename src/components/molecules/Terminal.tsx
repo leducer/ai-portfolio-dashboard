@@ -35,20 +35,6 @@ function hasSuccessfulContactInfoToolCall(message: UIMessage): boolean {
   );
 }
 
-/**
- * `status === "streaming"` wird vom SDK bereits gesetzt, sobald der
- * Text-Part im Stream eröffnet wird (`text-start`) – zu diesem Zeitpunkt ist
- * der Text aber oft noch leer (""). Für eine korrekte "Denkt..."-Anzeige
- * reicht der reine `status` daher nicht aus; wir prüfen zusätzlich, ob die
- * letzte Nachricht bereits sichtbaren Inhalt (Text oder Tool-Call) hat.
- */
-function hasRenderableContent(message: UIMessage | undefined): boolean {
-  if (!message) return false;
-  return message.parts.some(
-    (part) => (isTextUIPart(part) && part.text.length > 0) || isToolUIPart(part)
-  );
-}
-
 export default function Terminal() {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -59,28 +45,24 @@ export default function Terminal() {
   // instabil halten könnte.
   const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
 
-  // Wir setzen HIER absichtlich kein `experimental_throttle` – der Default
-  // (kein Throttling) sorgt dafür, dass jedes einzelne gestreamte Zeichen
-  // sofort einen Re-Render auslöst, ohne künstliche Sammel-Verzögerung.
+  // Wir setzen HIER absichtlich kein `experimental_throttle` (und keine
+  // anderen künstlichen Delay-Optionen) – der Default (kein Throttling)
+  // sorgt dafür, dass jedes einzelne gestreamte Zeichen sofort einen
+  // Re-Render auslöst, ohne künstliche Sammel-Verzögerung.
   const { messages, sendMessage, status } = useChat({ transport });
 
-  const lastMessage = messages.at(-1);
-
   // `useChat` liefert in dieser SDK-Version keinen `isLoading`-Flag direkt,
-  // sondern den granuläreren `status`. Wir leiten daraus zwei Zustände ab:
-  // "wartet noch auf das erste sichtbare Zeichen" (Denk-Anzeige) und
-  // "streamt aktiv Text" (blinkender Tipp-Cursor am Ende der Antwort).
-  //
-  // Wichtig: `status === "streaming"` wird vom SDK schon beim Öffnen des
-  // Text-Parts gesetzt, BEVOR der erste Buchstabe da ist. Damit die
-  // Denk-Anzeige nicht "künstlich" weiterläuft, obwohl längst Zeichen da
-  // sind – und umgekehrt nicht zu früh verschwindet – prüfen wir zusätzlich
-  // den tatsächlichen Inhalt der letzten Nachricht.
-  const isLastMessageStillEmpty = status === "streaming" && !hasRenderableContent(lastMessage);
-  const isAwaitingFirstToken = status === "submitted" || isLastMessageStillEmpty;
-  const isStreamingResponse = status === "streaming" && !isLastMessageStillEmpty;
+  // sondern den granuläreren `status`.
   const isLoading = status === "submitted" || status === "streaming";
-  const lastMessageId = lastMessage?.id;
+  const isStreamingResponse = status === "streaming";
+  const lastMessageId = messages.at(-1)?.id;
+
+  // Die Denk-Anzeige ("Agent denkt...") ist NUR sichtbar, solange noch gar
+  // keine Assistant-Nachricht existiert. Sobald `messages` ein Element mit
+  // `role === "assistant"` enthält – auch wenn dessen Text noch leer ist –
+  // blenden wir sie aus und rendern stattdessen sofort die `TerminalLine`
+  // mit blinkendem Cursor weiter, während der Text live eintrudelt.
+  const isThinking = isLoading && messages.filter((m) => m.role === "assistant").length === 0;
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     bottomRef.current?.scrollIntoView({ behavior, block: "end" });
@@ -151,7 +133,7 @@ export default function Terminal() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {isAwaitingFirstToken && (
+          {isThinking && (
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}

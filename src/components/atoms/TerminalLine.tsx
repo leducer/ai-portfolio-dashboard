@@ -49,8 +49,16 @@ export default function TerminalLine({ sender, text, showCursor = false }: Termi
       <span className={`shrink-0 ${className}`}>{label}</span>
       {/* min-w-0 ist nötig, damit dieses Flex-Item unter seine intrinsische
           Breite schrumpfen darf – sonst brechen lange Zeilen nicht um und
-          laufen horizontal aus dem Terminal heraus. */}
-      <span className="min-w-0 flex-1 text-white/90">
+          laufen horizontal aus dem Terminal heraus.
+          WICHTIG: Dieser Container muss ein <div> sein, kein <span>! Für den
+          Agenten hängen wir hier ein <div> (den Markdown-Wrapper) ein, und
+          <div> ist im HTML-Content-Model kein gültiges Kind von <span>
+          (Block- in Inline-Element). Der Browser "reparierte" das beim
+          initialen HTML-Parsing automatisch, indem er das <div> aus dem
+          <span> heraus verschoben hat – das zerstörte das Flex-Layout
+          (Bullet-Punkte und Text landeten optisch getrennt) und erzeugte
+          einen React-Hydration-Fehler. */}
+      <div className="min-w-0 flex-1 text-white/90">
         {sender === "agent" ? (
           // ReactMarkdown selbst rendert keinen Wrapper-Tag (nur ein Fragment
           // aus p/ul/li/...), daher muss der Container das Styling tragen.
@@ -66,7 +74,7 @@ export default function TerminalLine({ sender, text, showCursor = false }: Termi
             className="ml-1 inline-block h-4 w-[0.5ch] -translate-y-0.5 animate-blink bg-brand-neon align-middle"
           />
         )}
-      </span>
+      </div>
     </div>
   );
 }

@@ -3,6 +3,13 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+// Explizit die Node.js-Runtime (Standard in dieser Next.js-Version) statt
+// der veralteten Edge-Runtime, plus großzügiges Zeitlimit, damit auch
+// längere Streaming-Antworten nicht vorzeitig vom Deployment-Ziel gekappt
+// werden.
+export const runtime = "nodejs";
+export const maxDuration = 30;
+
 // @ai-sdk/google liest standardmäßig GOOGLE_GENERATIVE_AI_API_KEY.
 // Wir binden den Provider hier explizit an GEMINI_API_KEY.
 const google = createGoogleGenerativeAI({
@@ -33,53 +40,28 @@ const tools = {
   }),
 };
 
-// Der Lebenslauf-Text ändert sich praktisch nie, wird aber vor JEDEM
-// streamText()-Aufruf blockierend benötigt (er ist Teil des System-Prompts).
-// Ohne Cache verzögert der Supabase-Roundtrip auf jeder einzelnen Chat-Anfrage
-// den Zeitpunkt, an dem überhaupt mit dem Streaming begonnen werden kann.
-// Ein einfacher In-Memory-Cache mit TTL spart diesen Roundtrip bei jeder
-// Anfrage, die auf eine bereits "warme" Serverless-/Edge-Instanz trifft.
-const RESUME_CACHE_TTL_MS = 5 * 60 * 1000;
-let resumeCache: { text: string; expiresAt: number } | null = null;
-let resumeFetchInFlight: Promise<string | null> | null = null;
+// Der Lebenslauf-Text ist statisch. Der Supabase-Client baut pro Kaltstart
+// eine eigene Verbindung auf (TCP-/TLS-Handshake) – dieser Overhead lohnt
+// sich für einen unveränderlichen Wert nicht bei JEDER Chat-Anfrage. Daher
+// halten wir das Ergebnis in einer modulweiten Variable im Speicher: Sie
+// bleibt für die gesamte Lebensdauer der warmen Node.js-Instanz erhalten,
+// Supabase wird dadurch effektiv nur noch einmal abgefragt.
+let cachedCvText: string | null = null;
 
-async function fetchResumeText(): Promise<string | null> {
-  if (resumeCache && resumeCache.expiresAt > Date.now()) {
-    return resumeCache.text;
+async function loadCvTextIntoCache(): Promise<void> {
+  const { data, error } = await supabase
+    .from("profile_data")
+    .select("content")
+    .eq("key", "cv_text")
+    .single();
+
+  if (error) {
+    console.error("Supabase-Fehler beim Laden des Lebenslaufs:", error.message);
+    // Kein Cache-Eintrag bei Fehler, damit der nächste Request es erneut versucht.
+    return;
   }
 
-  // Treffen mehrere Anfragen gleichzeitig auf einen leeren/abgelaufenen Cache,
-  // teilen sie sich denselben Supabase-Call, statt die DB parallel mehrfach
-  // zu belasten.
-  if (!resumeFetchInFlight) {
-    resumeFetchInFlight = (async () => {
-      try {
-        const { data, error } = await supabase
-          .from("profile_data")
-          .select("content")
-          .eq("key", "cv_text")
-          .single();
-
-        if (error) {
-          console.error("Supabase-Fehler beim Laden des Lebenslaufs:", error.message);
-          return null;
-        }
-
-        const text = data?.content ?? null;
-        if (text) {
-          resumeCache = { text, expiresAt: Date.now() + RESUME_CACHE_TTL_MS };
-        }
-        return text;
-      } catch (err) {
-        console.error("Unerwarteter Fehler beim Laden des Lebenslaufs:", err);
-        return null;
-      } finally {
-        resumeFetchInFlight = null;
-      }
-    })();
-  }
-
-  return resumeFetchInFlight;
+  cachedCvText = data?.content ?? null;
 }
 
 function buildSystemPrompt(resumeText: string | null): string {
@@ -105,16 +87,36 @@ ${wissensbasis}
   nicht im Lebenslauf stehen, statt zu bluffen.
 - Wenn der Benutzer nach Kontaktdaten fragt, nutze zwingend das Tool
   "showContactInformation", anstatt die Daten als reinen Text auszuschreiben.
+- Wenn der Benutzer (Recruiter) andeutet, dass er dir ein Jobangebot machen
+  möchte, dich für ein Projekt buchen will oder dich kontaktieren möchte,
+  antworte ihm freundlich und weise ihn explizit darauf hin, dass er direkt
+  das "Job-Anfrage-Formular" auf der rechten Seite des Dashboards nutzen
+  kann, um die Details einzutragen.
+- Wenn der Benutzer nach einem klassischen Lebenslauf, einer PDF-Datei,
+  einem Dokument zum Ausdrucken oder Speichern meines Profils fragt,
+  antworte freundlich und weise ihn explizit darauf hin, dass er oben
+  rechts auf dem Dashboard den Button "[DOWNLOAD_CV.PDF]" klicken kann,
+  um die vollständige PDF-Datei direkt herunterzuladen.
 `.trim();
 }
 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
-  const resumeText = await fetchResumeText();
+
+  // Nur beim allerersten Request (kalter Cache) wird Supabase tatsächlich
+  // kontaktiert. Bei jedem weiteren Request auf derselben warmen Instanz
+  // wird der teure Verbindungsaufbau komplett übersprungen.
+  if (cachedCvText === null) {
+    try {
+      await loadCvTextIntoCache();
+    } catch (err) {
+      console.error("Unerwarteter Fehler beim Laden des Lebenslaufs:", err);
+    }
+  }
 
   const result = streamText({
     model: google("gemini-3.6-flash"),
-    system: buildSystemPrompt(resumeText),
+    system: buildSystemPrompt(cachedCvText),
     messages: await convertToModelMessages(messages),
     // Verhindert, dass lange Antworten (z.B. detaillierte Lebenslauf-Zusammenfassungen)
     // mitten im Satz abgeschnitten werden.
