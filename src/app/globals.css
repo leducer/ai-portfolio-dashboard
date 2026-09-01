@@ -1,26 +1,50 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Hier definieren wir deine Custom Colors im v4-Standard */
+  --color-brand-black: #0a0b0d;      /* Tiefes, edles Anthrazit-Schwarz */
+  --color-brand-dark: #12141c;       /* Karten- und Terminalhintergrund */
+  --color-brand-neon: #00ff66;       /* Cyberpunk-Grün für aktive Agenten */
+  --color-brand-glow: rgba(0, 255, 102, 0.15); /* Schein-Effekt */
+  --color-brand-accent: #00e5ff;     /* Cyan-Blau für Recruiter-Fragen */
+
+  /* Schriftart überschreiben */
+  --font-mono: "JetBrains Mono", "Fira Code", "Courier New", "monospace";
+
+  /* Blinkender Terminal-Cursor */
+  --animate-blink: blink 1s step-end infinite;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
   }
 }
 
+:root {
+  --background: var(--color-brand-black);
+  --foreground: #f3f4f6;
+}
+
 body {
-  background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--background);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Röhrenmonitor-Effekt für dein KI-Terminal */
+.scanline {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  );
+  background-size: 100% 4px;
 }
