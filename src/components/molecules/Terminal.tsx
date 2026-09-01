@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, isTextUIPart, type UIMessage } from "ai";
+import { DefaultChatTransport, getToolName, isTextUIPart, isToolUIPart, type UIMessage } from "ai";
 import { AnimatePresence, motion } from "framer-motion";
+import ContactCard from "@/components/atoms/ContactCard";
 import TerminalLine from "@/components/atoms/TerminalLine";
 import TerminalInput from "@/components/atoms/TerminalInput";
 
 const WELCOME_MESSAGE = "Willkommen im AI Interface. Stell mir eine Frage zu meinem Profil.";
 
 const MESSAGE_TRANSITION = { duration: 0.25, ease: "easeOut" as const };
+
+const CONTACT_INFO_TOOL_NAME = "showContactInformation";
 
 function getMessageText(message: UIMessage): string {
   return message.parts
@@ -18,26 +21,74 @@ function getMessageText(message: UIMessage): string {
     .join("");
 }
 
+/**
+ * Prüft, ob eine Assistant-Nachricht einen erfolgreich ausgeführten
+ * `showContactInformation`-Tool-Call enthält (`state === "output-available"`
+ * ist das v6-SDK-Äquivalent zum früheren `state === "result"`).
+ */
+function hasSuccessfulContactInfoToolCall(message: UIMessage): boolean {
+  return message.parts.some(
+    (part) =>
+      isToolUIPart(part) &&
+      getToolName(part) === CONTACT_INFO_TOOL_NAME &&
+      part.state === "output-available"
+  );
+}
+
+/**
+ * `status === "streaming"` wird vom SDK bereits gesetzt, sobald der
+ * Text-Part im Stream eröffnet wird (`text-start`) – zu diesem Zeitpunkt ist
+ * der Text aber oft noch leer (""). Für eine korrekte "Denkt..."-Anzeige
+ * reicht der reine `status` daher nicht aus; wir prüfen zusätzlich, ob die
+ * letzte Nachricht bereits sichtbaren Inhalt (Text oder Tool-Call) hat.
+ */
+function hasRenderableContent(message: UIMessage | undefined): boolean {
+  if (!message) return false;
+  return message.parts.some(
+    (part) => (isTextUIPart(part) && part.text.length > 0) || isToolUIPart(part)
+  );
+}
+
 export default function Terminal() {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const { messages, sendMessage, status } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
-  });
+  // Ohne useMemo würde bei jedem Render eine neue Transport-Instanz
+  // entstehen – das ist für eine "saubere" useChat-Konfiguration zu
+  // vermeiden, da der Hook den Transport sonst unnötig für referenziell
+  // instabil halten könnte.
+  const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
+
+  // Wir setzen HIER absichtlich kein `experimental_throttle` – der Default
+  // (kein Throttling) sorgt dafür, dass jedes einzelne gestreamte Zeichen
+  // sofort einen Re-Render auslöst, ohne künstliche Sammel-Verzögerung.
+  const { messages, sendMessage, status } = useChat({ transport });
+
+  const lastMessage = messages.at(-1);
 
   // `useChat` liefert in dieser SDK-Version keinen `isLoading`-Flag direkt,
   // sondern den granuläreren `status`. Wir leiten daraus zwei Zustände ab:
-  // "wartet noch auf den ersten Token" (Denk-Anzeige) und "streamt aktiv
-  // Text" (blinkender Tipp-Cursor am Ende der Antwort).
+  // "wartet noch auf das erste sichtbare Zeichen" (Denk-Anzeige) und
+  // "streamt aktiv Text" (blinkender Tipp-Cursor am Ende der Antwort).
+  //
+  // Wichtig: `status === "streaming"` wird vom SDK schon beim Öffnen des
+  // Text-Parts gesetzt, BEVOR der erste Buchstabe da ist. Damit die
+  // Denk-Anzeige nicht "künstlich" weiterläuft, obwohl längst Zeichen da
+  // sind – und umgekehrt nicht zu früh verschwindet – prüfen wir zusätzlich
+  // den tatsächlichen Inhalt der letzten Nachricht.
+  const isLastMessageStillEmpty = status === "streaming" && !hasRenderableContent(lastMessage);
+  const isAwaitingFirstToken = status === "submitted" || isLastMessageStillEmpty;
+  const isStreamingResponse = status === "streaming" && !isLastMessageStillEmpty;
   const isLoading = status === "submitted" || status === "streaming";
-  const isAwaitingFirstToken = status === "submitted";
-  const isStreamingResponse = status === "streaming";
-  const lastMessageId = messages.at(-1)?.id;
+  const lastMessageId = lastMessage?.id;
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+  }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, isLoading]);
+    scrollToBottom();
+  }, [messages, isLoading, scrollToBottom]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     setInput(e.target.value);
@@ -68,6 +119,8 @@ export default function Terminal() {
           {messages.map((message) => {
             const isCurrentlyStreaming =
               isStreamingResponse && message.role !== "user" && message.id === lastMessageId;
+            const showContactCard =
+              message.role !== "user" && hasSuccessfulContactInfoToolCall(message);
 
             return (
               <motion.div
@@ -81,6 +134,17 @@ export default function Terminal() {
                   text={getMessageText(message)}
                   showCursor={isCurrentlyStreaming}
                 />
+                {showContactCard && (
+                  <ContactCard
+                    className="mt-2"
+                    // Der Scale-In-Effekt ändert nur `transform`, nicht den
+                    // Layout-Platzbedarf – trotzdem stoßen wir hier zur
+                    // Sicherheit noch einen finalen Scroll an, z.B. falls
+                    // Bilder/Fonts währenddessen nachladen und die Höhe
+                    // minimal verschieben.
+                    onAnimationComplete={() => scrollToBottom()}
+                  />
+                )}
               </motion.div>
             );
           })}
