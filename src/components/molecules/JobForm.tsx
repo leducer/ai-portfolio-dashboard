@@ -46,7 +46,7 @@ const FIELD_LABELS: Record<keyof JobInquiryFormData, string> = {
 };
 
 const SUCCESS_MESSAGE =
-  ">> [SUCCESS]: Datenübertragung verschlüsselt an Canh gesendet. Ich melde mich in Kürze.";
+  ">> [SUCCESS]: Datenübertragung verschlüsselt an Duc gesendet. Ich melde mich in Kürze.";
 
 const INPUT_CLASSNAME =
   "rounded-md border border-white/10 bg-brand-black/40 px-3 py-2 font-mono text-sm text-white " +

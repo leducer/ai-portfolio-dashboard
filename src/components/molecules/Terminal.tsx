@@ -5,6 +5,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isTextUIPart, isToolUIPart, type UIMessage } from "ai";
 import { AnimatePresence, motion } from "framer-motion";
 import ContactCard from "@/components/atoms/ContactCard";
+import GithubRepoCard, { type GithubRepoCardProps } from "@/components/atoms/GithubRepoCard";
 import TerminalLine from "@/components/atoms/TerminalLine";
 import TerminalInput from "@/components/atoms/TerminalInput";
 
@@ -13,6 +14,12 @@ const WELCOME_MESSAGE = "Willkommen im AI Interface. Stell mir eine Frage zu mei
 const MESSAGE_TRANSITION = { duration: 0.25, ease: "easeOut" as const };
 
 const CONTACT_INFO_TOOL_NAME = "showContactInformation";
+const GITHUB_REPOS_TOOL_NAME = "showGithubRepositories";
+
+type GithubRepository = Pick<
+  GithubRepoCardProps,
+  "title" | "description" | "stars" | "language" | "url"
+>;
 
 function getMessageText(message: UIMessage): string {
   return message.parts
@@ -21,18 +28,25 @@ function getMessageText(message: UIMessage): string {
     .join("");
 }
 
-/**
- * Prüft, ob eine Assistant-Nachricht einen erfolgreich ausgeführten
- * `showContactInformation`-Tool-Call enthält (`state === "output-available"`
- * ist das v6-SDK-Äquivalent zum früheren `state === "result"`).
- */
-function hasSuccessfulContactInfoToolCall(message: UIMessage): boolean {
-  return message.parts.some(
-    (part) =>
-      isToolUIPart(part) &&
-      getToolName(part) === CONTACT_INFO_TOOL_NAME &&
-      part.state === "output-available"
+function isGithubRepository(value: unknown): value is GithubRepository {
+  if (typeof value !== "object" || value === null) return false;
+  const repo = value as Record<string, unknown>;
+  return (
+    typeof repo.title === "string" &&
+    typeof repo.description === "string" &&
+    typeof repo.stars === "number" &&
+    typeof repo.language === "string" &&
+    typeof repo.url === "string"
   );
+}
+
+/**
+ * In AI SDK v3/v4 lagen Tool-Calls unter `message.toolInvocations` mit
+ * `state === "result"`. In v6 sind das `message.parts` (via `isToolUIPart`)
+ * mit `state === "output-available"`.
+ */
+function getToolInvocations(message: UIMessage) {
+  return message.parts.filter(isToolUIPart);
 }
 
 export default function Terminal() {
@@ -101,8 +115,8 @@ export default function Terminal() {
           {messages.map((message) => {
             const isCurrentlyStreaming =
               isStreamingResponse && message.role !== "user" && message.id === lastMessageId;
-            const showContactCard =
-              message.role !== "user" && hasSuccessfulContactInfoToolCall(message);
+            const toolInvocations =
+              message.role !== "user" ? getToolInvocations(message) : [];
 
             return (
               <motion.div
@@ -116,17 +130,52 @@ export default function Terminal() {
                   text={getMessageText(message)}
                   showCursor={isCurrentlyStreaming}
                 />
-                {showContactCard && (
-                  <ContactCard
-                    className="mt-2"
-                    // Der Scale-In-Effekt ändert nur `transform`, nicht den
-                    // Layout-Platzbedarf – trotzdem stoßen wir hier zur
-                    // Sicherheit noch einen finalen Scroll an, z.B. falls
-                    // Bilder/Fonts währenddessen nachladen und die Höhe
-                    // minimal verschieben.
-                    onAnimationComplete={() => scrollToBottom()}
-                  />
-                )}
+                {toolInvocations.map((invocation) => {
+                  const toolName = getToolName(invocation);
+                  // v6: `output-available` entspricht dem früheren `state === "result"`.
+                  const hasResult = invocation.state === "output-available";
+
+                  if (toolName === CONTACT_INFO_TOOL_NAME && hasResult) {
+                    return (
+                      <ContactCard
+                        key={invocation.toolCallId}
+                        className="mt-2"
+                        onAnimationComplete={() => scrollToBottom()}
+                      />
+                    );
+                  }
+
+                  if (toolName === GITHUB_REPOS_TOOL_NAME && hasResult) {
+                    const repositories = Array.isArray(invocation.output)
+                      ? invocation.output.filter(isGithubRepository)
+                      : [];
+
+                    return (
+                      <div
+                        key={invocation.toolCallId}
+                        className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2"
+                      >
+                        {repositories.map((repo, index) => (
+                          <GithubRepoCard
+                            key={repo.url}
+                            title={repo.title}
+                            description={repo.description}
+                            stars={repo.stars}
+                            language={repo.language}
+                            url={repo.url}
+                            onAnimationComplete={
+                              index === repositories.length - 1
+                                ? () => scrollToBottom()
+                                : undefined
+                            }
+                          />
+                        ))}
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })}
               </motion.div>
             );
           })}

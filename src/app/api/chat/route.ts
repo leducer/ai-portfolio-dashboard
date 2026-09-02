@@ -24,9 +24,38 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+const FEATURED_GITHUB_REPOSITORIES = [
+  {
+    title: "ai-portfolio-dashboard",
+    description:
+      "Ein vollständig KI-gesteuertes Senior Portfolio mit Echtzeit-Gemini-Streaming, Supabase-Caching und automatischen Resend-E-Mail-Alerts.",
+    stars: 12,
+    language: "TypeScript",
+    url: "https://github.com/leducer/ai-portfolio-dashboard",
+  },
+  {
+    title: "nextjs-pattern-library",
+    description:
+      "Eine hochmoderne UI-Komponentenbibliothek nach Atomic Design Prinzipien für skalierbare Web-Apps.",
+    stars: 42,
+    language: "React.js",
+    url: "https://github.com/leducer/nextjs-pattern-library",
+  },
+  {
+    title: "gemini-streaming-chat",
+    description:
+      "Ein latenzarmes Chat-Interface mit tokenweisem Gemini-Streaming, Tool-Calling und Terminal-UX für Recruiter-Workflows.",
+    stars: 18,
+    language: "TypeScript",
+    url: "https://github.com/leducer/gemini-streaming-chat",
+  },
+];
+
 // Tools, die das Modell aufrufen kann. `showContactInformation` liefert
 // strukturierte Kontaktdaten statt sie als Fließtext auszuschreiben – das
 // Frontend kann den Tool-Call dadurch gezielt als Kontaktkarte rendern.
+// `showGithubRepositories` liefert kuratierte Open-Source-Projekte, die
+// das Frontend als Repo-Karten rendern kann.
 const tools = {
   showContactInformation: tool({
     description:
@@ -37,6 +66,12 @@ const tools = {
       email: "leducer@gmail.com",
       phone: "+49 173 2611236",
     }),
+  }),
+  showGithubRepositories: tool({
+    description:
+      "Wird aufgerufen, wenn der Benutzer nach Projekten, GitHub, Repositories, Code-Beispielen oder Open-Source-Arbeiten des Entwicklers fragt.",
+    inputSchema: z.object({}),
+    execute: async () => FEATURED_GITHUB_REPOSITORIES,
   }),
 };
 
@@ -87,6 +122,8 @@ ${wissensbasis}
   nicht im Lebenslauf stehen, statt zu bluffen.
 - Wenn der Benutzer nach Kontaktdaten fragt, nutze zwingend das Tool
   "showContactInformation", anstatt die Daten als reinen Text auszuschreiben.
+- Wenn der Recruiter nach deinen Projekten oder GitHub sucht, nutze
+  zwingend das Tool "showGithubRepositories".
 - Wenn der Benutzer (Recruiter) andeutet, dass er dir ein Jobangebot machen
   möchte, dich für ein Projekt buchen will oder dich kontaktieren möchte,
   antworte ihm freundlich und weise ihn explizit darauf hin, dass er direkt
