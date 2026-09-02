@@ -40,11 +40,28 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Röhrenmonitor-Effekt für dein KI-Terminal */
+/*
+  Röhrenmonitor-Scanlines: statisches ::after-Overlay, kein Animation-Loop.
+  So entsteht kein Flimmern, und `background` am Terminal selbst bleibt
+  unangetastet (Tailwind `bg-brand-dark` wird nicht überschrieben).
+*/
 .scanline {
-  background: linear-gradient(
-    rgba(18, 16, 16, 0) 50%, 
-    rgba(0, 0, 0, 0.25) 50%
+  position: relative;
+  isolation: isolate;
+}
+
+.scanline::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.03) 0px,
+    rgba(0, 0, 0, 0.03) 1px,
+    transparent 1px,
+    transparent 3px
   );
-  background-size: 100% 4px;
 }
