@@ -52,6 +52,7 @@ function getToolInvocations(message: UIMessage) {
 
 export default function Terminal() {
   const [input, setInput] = useState("");
+  const inputRef = useRef("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Ohne useMemo würde bei jedem Render eine neue Transport-Instanz
@@ -88,15 +89,20 @@ export default function Terminal() {
   }, [messages, isLoading, scrollToBottom]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setInput(e.target.value);
+    const next = e.target.value;
+    // Ref sofort schreiben: SpeechRecognition ruft onChange und oft direkt
+    // danach onend/Submit auf – der State wäre sonst noch der alte Wert.
+    inputRef.current = next;
+    setInput(next);
   };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const trimmed = input.trim();
+    const trimmed = inputRef.current.trim();
     if (!trimmed || isLoading) return;
 
     sendMessage({ text: trimmed });
+    inputRef.current = "";
     setInput("");
   };
 
