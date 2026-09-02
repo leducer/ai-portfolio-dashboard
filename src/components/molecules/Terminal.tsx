@@ -170,8 +170,9 @@ export default function Terminal() {
                 {toolInvocations.map((invocation) => {
                   const toolName = getToolName(invocation);
                   // v6: `output-available` entspricht dem früheren `state === "result"`.
-                  const hasResult =
-                    invocation.state === "output-available" || invocation.state === "result";
+                  // Das alte Literal "result" existiert im aktuellen `ToolUIPart`-Typen-Set
+                  // nicht mehr, weshalb der Vergleich hier entfällt.
+                  const hasResult = invocation.state === "output-available";
 
                   if (toolName === CONTACT_INFO_TOOL_NAME && hasResult) {
                     return (
