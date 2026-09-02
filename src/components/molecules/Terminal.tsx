@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isTextUIPart, isToolUIPart, type UIMessage } from "ai";
 import { AnimatePresence, motion } from "framer-motion";
+import AvailabilityCard, { type AvailabilityCardProps } from "@/components/atoms/AvailabilityCard";
 import ContactCard from "@/components/atoms/ContactCard";
 import GithubRepoCard, { type GithubRepoCardProps } from "@/components/atoms/GithubRepoCard";
 import SpeechButton from "@/components/atoms/SpeechButton";
@@ -16,11 +17,25 @@ const MESSAGE_TRANSITION = { duration: 0.25, ease: "easeOut" as const };
 
 const CONTACT_INFO_TOOL_NAME = "showContactInformation";
 const GITHUB_REPOS_TOOL_NAME = "showGithubRepositories";
+const AVAILABILITY_TOOL_NAME = "getAvailability";
+
+type Availability = Pick<AvailabilityCardProps, "status" | "date" | "capacity" | "notes">;
 
 type GithubRepository = Pick<
   GithubRepoCardProps,
   "title" | "description" | "stars" | "language" | "url"
 >;
+
+function isAvailability(value: unknown): value is Availability {
+  if (typeof value !== "object" || value === null) return false;
+  const availability = value as Record<string, unknown>;
+  return (
+    typeof availability.status === "string" &&
+    typeof availability.date === "string" &&
+    typeof availability.capacity === "string" &&
+    typeof availability.notes === "string"
+  );
+}
 
 function getMessageText(message: UIMessage): string {
   return message.parts
@@ -155,7 +170,8 @@ export default function Terminal() {
                 {toolInvocations.map((invocation) => {
                   const toolName = getToolName(invocation);
                   // v6: `output-available` entspricht dem früheren `state === "result"`.
-                  const hasResult = invocation.state === "output-available";
+                  const hasResult =
+                    invocation.state === "output-available" || invocation.state === "result";
 
                   if (toolName === CONTACT_INFO_TOOL_NAME && hasResult) {
                     return (
@@ -193,6 +209,20 @@ export default function Terminal() {
                           />
                         ))}
                       </div>
+                    );
+                  }
+
+                  if (toolName === AVAILABILITY_TOOL_NAME && hasResult && isAvailability(invocation.output)) {
+                    return (
+                      <AvailabilityCard
+                        key={invocation.toolCallId}
+                        className="mt-2"
+                        status={invocation.output.status}
+                        date={invocation.output.date}
+                        capacity={invocation.output.capacity}
+                        notes={invocation.output.notes}
+                        onAnimationComplete={() => scrollToBottom()}
+                      />
                     );
                   }
 

@@ -2,6 +2,7 @@
 
 import DownloadButton from "@/components/atoms/DownloadButton";
 import SubtleMatrixBackground from "@/components/atoms/SubtleMatrixBackground";
+import AdminPanel from "@/components/molecules/AdminPanel";
 import JobForm from "@/components/molecules/JobForm";
 import Terminal from "@/components/molecules/Terminal";
 
@@ -40,6 +41,10 @@ export default function Home() {
             <JobForm />
           </div>
         </div>
+
+        <footer className="mt-auto flex w-full max-w-6xl justify-start pt-6">
+          <AdminPanel />
+        </footer>
       </div>
     </div>
   );

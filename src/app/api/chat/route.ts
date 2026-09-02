@@ -2,6 +2,7 @@ import { streamText, convertToModelMessages, tool, type UIMessage } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { profileCache } from "@/lib/profile-cache";
 
 // Explizit die Node.js-Runtime (Standard in dieser Next.js-Version) statt
 // der veralteten Edge-Runtime, plus großzügiges Zeitlimit, damit auch
@@ -73,6 +74,37 @@ const tools = {
     inputSchema: z.object({}),
     execute: async () => FEATURED_GITHUB_REPOSITORIES,
   }),
+  getAvailability: tool({
+    description:
+      "Wird aufgerufen, wenn der Benutzer nach der Verfügbarkeit, Auslastung, freien Kapazitäten oder dem nächstmöglichen Starttermin des Entwicklers fragt.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const { data, error } = await supabase
+        .from("profile_data")
+        .select("content")
+        .eq("key", "availability")
+        .single();
+
+      if (error) {
+        console.error("Supabase-Fehler beim Laden der Verfügbarkeit:", error.message);
+        return { error: "Verfügbarkeit konnte nicht geladen werden." };
+      }
+
+      try {
+        const parsed =
+          typeof data?.content === "string" ? JSON.parse(data.content) : data?.content;
+        return {
+          status: String(parsed?.status ?? ""),
+          date: String(parsed?.date ?? ""),
+          capacity: String(parsed?.capacity ?? ""),
+          notes: String(parsed?.notes ?? ""),
+        };
+      } catch (err) {
+        console.error("Verfügbarkeits-JSON konnte nicht geparst werden:", err);
+        return { error: "Verfügbarkeitsdaten sind ungültig." };
+      }
+    },
+  }),
 };
 
 // Der Lebenslauf-Text ist statisch. Der Supabase-Client baut pro Kaltstart
@@ -81,8 +113,6 @@ const tools = {
 // halten wir das Ergebnis in einer modulweiten Variable im Speicher: Sie
 // bleibt für die gesamte Lebensdauer der warmen Node.js-Instanz erhalten,
 // Supabase wird dadurch effektiv nur noch einmal abgefragt.
-let cachedCvText: string | null = null;
-
 async function loadCvTextIntoCache(): Promise<void> {
   const { data, error } = await supabase
     .from("profile_data")
@@ -92,11 +122,10 @@ async function loadCvTextIntoCache(): Promise<void> {
 
   if (error) {
     console.error("Supabase-Fehler beim Laden des Lebenslaufs:", error.message);
-    // Kein Cache-Eintrag bei Fehler, damit der nächste Request es erneut versucht.
     return;
   }
 
-  cachedCvText = data?.content ?? null;
+  profileCache.cachedCvText = data?.content ?? null;
 }
 
 function buildSystemPrompt(resumeText: string | null): string {
@@ -124,6 +153,9 @@ ${wissensbasis}
   "showContactInformation", anstatt die Daten als reinen Text auszuschreiben.
 - Wenn der Recruiter nach deinen Projekten oder GitHub sucht, nutze
   zwingend das Tool "showGithubRepositories".
+- Wenn der Benutzer nach Verfügbarkeit, Auslastung, freien Kapazitäten
+  oder dem nächstmöglichen Starttermin fragt, nutze zwingend das Tool
+  "getAvailability", anstatt die Daten als reinen Text auszuschreiben.
 - Wenn der Benutzer (Recruiter) andeutet, dass er dir ein Jobangebot machen
   möchte, dich für ein Projekt buchen will oder dich kontaktieren möchte,
   antworte ihm freundlich und weise ihn explizit darauf hin, dass er direkt
@@ -143,7 +175,7 @@ export async function POST(req: Request) {
   // Nur beim allerersten Request (kalter Cache) wird Supabase tatsächlich
   // kontaktiert. Bei jedem weiteren Request auf derselben warmen Instanz
   // wird der teure Verbindungsaufbau komplett übersprungen.
-  if (cachedCvText === null) {
+  if (profileCache.cachedCvText === null) {
     try {
       await loadCvTextIntoCache();
     } catch (err) {
@@ -153,7 +185,7 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: google("gemini-3.6-flash"),
-    system: buildSystemPrompt(cachedCvText),
+    system: buildSystemPrompt(profileCache.cachedCvText),
     messages: await convertToModelMessages(messages),
     // Verhindert, dass lange Antworten (z.B. detaillierte Lebenslauf-Zusammenfassungen)
     // mitten im Satz abgeschnitten werden.
