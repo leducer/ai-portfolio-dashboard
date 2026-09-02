@@ -6,6 +6,7 @@ import { DefaultChatTransport, getToolName, isTextUIPart, isToolUIPart, type UIM
 import { AnimatePresence, motion } from "framer-motion";
 import ContactCard from "@/components/atoms/ContactCard";
 import GithubRepoCard, { type GithubRepoCardProps } from "@/components/atoms/GithubRepoCard";
+import SpeechButton from "@/components/atoms/SpeechButton";
 import TerminalLine from "@/components/atoms/TerminalLine";
 import TerminalInput from "@/components/atoms/TerminalInput";
 
@@ -109,14 +110,24 @@ export default function Terminal() {
       </div>
 
       <div className="flex h-[420px] flex-col gap-2 overflow-y-auto px-4 py-4">
-        {messages.length === 0 && <TerminalLine sender="agent" text={WELCOME_MESSAGE} />}
+        {messages.length === 0 && (
+          <div>
+            <TerminalLine sender="agent" text={WELCOME_MESSAGE} />
+            <div className="mt-1 flex justify-end">
+              <SpeechButton text={WELCOME_MESSAGE} />
+            </div>
+          </div>
+        )}
 
         <AnimatePresence initial={false}>
           {messages.map((message) => {
+            const isAgent = message.role !== "user";
+            const messageText = getMessageText(message);
             const isCurrentlyStreaming =
-              isStreamingResponse && message.role !== "user" && message.id === lastMessageId;
-            const toolInvocations =
-              message.role !== "user" ? getToolInvocations(message) : [];
+              isStreamingResponse && isAgent && message.id === lastMessageId;
+            const toolInvocations = isAgent ? getToolInvocations(message) : [];
+            const showSpeechButton =
+              isAgent && !isCurrentlyStreaming && messageText.trim() !== "";
 
             return (
               <motion.div
@@ -126,10 +137,15 @@ export default function Terminal() {
                 transition={MESSAGE_TRANSITION}
               >
                 <TerminalLine
-                  sender={message.role === "user" ? "user" : "agent"}
-                  text={getMessageText(message)}
+                  sender={isAgent ? "agent" : "user"}
+                  text={messageText}
                   showCursor={isCurrentlyStreaming}
                 />
+                {showSpeechButton && (
+                  <div className="mt-1 flex justify-end">
+                    <SpeechButton text={messageText} />
+                  </div>
+                )}
                 {toolInvocations.map((invocation) => {
                   const toolName = getToolName(invocation);
                   // v6: `output-available` entspricht dem früheren `state === "result"`.
