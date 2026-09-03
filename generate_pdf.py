@@ -97,7 +97,7 @@ def create_cv():
     # ─── HEADER (NAME, STATUS & PROFILBILD) ──────────────────────────────
     contact_text = (
         "<b>Mobil:</b> +49 173 2611236  |  <b>E-Mail:</b> leducer@gmail.com  |  <b>Ort:</b> 50969 Köln<br/>"
-        "<b>GitHub:</b> ://github.com  |  <b>Live AI-Interface:</b> leducer.space"
+        "<b>GitHub:</b> https://github.com/leducer |  <b>Live AI-Interface:</b> leducer.space"
     )
     
     AVATAR_DIAMETER = 76  # pt, innerhalb der geforderten 70-80pt
